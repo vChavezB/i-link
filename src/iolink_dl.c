@@ -36,7 +36,7 @@
 #include <stdio.h>  /* snprintf */
 #include <sys/time.h>
 #include <zephyr/kernel.h>
-static K_THREAD_STACK_DEFINE(iolm_dl_stack, CONFIG_IOLINK_DL_STACK_SIZE); 
+static K_THREAD_STACK_ARRAY_DEFINE(iolm_dl_stack, CONFIG_IOLINK_NUM_PORTS,CONFIG_IOLINK_DL_STACK_SIZE); 
 
 // TODO: Events in preop
 // TODO: ISDU Timer
@@ -3563,8 +3563,8 @@ void iolink_dl_instantiate (
    dl->thread = os_thread_create (
       dl_thread_names[portnumber - 1],
       CONFIG_IOLINK_PRIO+1,
-      iolm_dl_stack,
-      K_THREAD_STACK_SIZEOF(iolm_dl_stack),
+      iolm_dl_stack[portnumber - 1],
+      K_THREAD_STACK_SIZEOF(iolm_dl_stack[portnumber - 1]),
       dl_main,
       port);
 
