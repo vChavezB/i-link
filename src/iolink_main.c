@@ -32,7 +32,7 @@
 #include <stdlib.h> /* calloc */
 
 
-static K_THREAD_STACK_DEFINE(iolm_stack, IOLINK_MAIN_STACK_SIZE); 
+static K_THREAD_STACK_DEFINE(iolm_stack, CONFIG_IOLINK_MAIN_STACK_SIZE); 
 
 /**
  * @file

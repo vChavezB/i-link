@@ -3559,7 +3559,7 @@ void iolink_dl_instantiate (
       IOLINK_DL_THREAD_NAME_LENGTH,
       "iolport%d",
       portnumber);
-   dl->thread = os_thread_create (
+      dl->thread = os_thread_create (
       dl_thread_names[portnumber - 1],
       CONFIG_IOLINK_PRIO+1,
       iolm_dl_stack,
