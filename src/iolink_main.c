@@ -31,6 +31,9 @@
 
 #include <stdlib.h> /* calloc */
 
+
+static K_THREAD_STACK_DEFINE(iolm_stack, IOLINK_MAIN_STACK_SIZE); 
+
 /**
  * @file
  * @brief Handler
@@ -541,8 +544,9 @@ iolink_m_t * iolink_m_init (const iolink_m_cfg_t * m_cfg)
    CC_ASSERT (master->mbox_avail != NULL);
    master->thread = os_thread_create (
       "iolink_m_thread",
-      m_cfg->master_thread_prio,
-      m_cfg->master_thread_stack_size,
+      CONFIG_IOLINK_PRIO,
+      iolm_stack,
+      K_THREAD_STACK_SIZEOF(iolm_stack),
       iolink_main,
       master);
    CC_ASSERT (master->thread != NULL);

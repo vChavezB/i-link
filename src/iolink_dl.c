@@ -35,6 +35,7 @@
 #include <string.h> /* memset */
 #include <stdio.h>  /* snprintf */
 #include <sys/time.h>
+static K_THREAD_STACK_DEFINE(iolm_dl_stack, IOLINK_DL_STACK_SIZE); 
 
 // TODO: Events in preop
 // TODO: ISDU Timer
@@ -3560,8 +3561,9 @@ void iolink_dl_instantiate (
       portnumber);
    dl->thread = os_thread_create (
       dl_thread_names[portnumber - 1],
-      thread_prio,
-      thread_stack_size,
+      CONFIG_IOLINK_PRIO+1,
+      iolm_dl_stack,
+      K_THREAD_STACK_SIZEOF(iolm_dl_stack),
       dl_main,
       port);
 
