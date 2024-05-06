@@ -544,7 +544,7 @@ iolink_m_t * iolink_m_init (const iolink_m_cfg_t * m_cfg)
    CC_ASSERT (master->mbox_avail != NULL);
    master->thread = os_thread_create (
       "iolink_m_thread",
-      CONFIG_IOLINK_PRIO,
+      CONFIG_IOLINK_MASTER_PRIO,
       iolm_stack,
       K_THREAD_STACK_SIZEOF(iolm_stack),
       iolink_main,
