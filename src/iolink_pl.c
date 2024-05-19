@@ -24,8 +24,6 @@
 #include <drivers/fd.h>
 #endif
 
-#include <fcntl.h>  /* O_RDWR */
-#include <unistd.h> /* close */
 
 #include "iolink_main.h" /* iolink_port_t */
 
