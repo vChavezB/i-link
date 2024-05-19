@@ -34,7 +34,7 @@
 
 #include <string.h> /* memset */
 #include <stdio.h>  /* snprintf */
-#include <sys/time.h>
+
 #include <zephyr/kernel.h>
 static K_THREAD_STACK_ARRAY_DEFINE(iolm_dl_stack, CONFIG_IOLINK_NUM_PORTS,CONFIG_IOLINK_DL_STACK_SIZE); 
 

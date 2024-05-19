@@ -15,8 +15,7 @@
 
 #include <stdlib.h>
 #include <assert.h>
-#include <fcntl.h>
-#include <unistd.h>
+
 #include <iolink_dl.h>
 #include <errno.h>
 
