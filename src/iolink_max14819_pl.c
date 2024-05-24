@@ -818,17 +818,21 @@ static const iolink_hw_ops_t iolink_hw_ops = {
    .pl_handler          = iolink_pl_max14819_pl_handler,
 };
 
+#define TOTAL_DRV (CONFIG_IOLINK_NUM_PORTS*2)
+static iolink_14819_drv_t drv_instances[TOTAL_DRV];
+static uint8_t drv_cnt;
+
 iolink_hw_drv_t * iolink_14819_init (const iolink_14819_cfg_t * cfg)
 {
    iolink_14819_drv_t * iolink;
    uint8_t ch;
    uint8_t rev;
-   /* Allocate driver structure */
-   iolink = calloc (1, sizeof (iolink_14819_drv_t));
-   if (iolink == NULL)
+   if (drv_cnt >= TOTAL_DRV)
    {
       return NULL;
    }
+   /* Static allocation */
+   iolink = &drv_instances[drv_cnt++];
 
    /* Initialise driver structure */
    iolink->drv.ops      = &iolink_hw_ops;

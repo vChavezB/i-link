@@ -87,10 +87,11 @@ typedef struct iolink_m
       const uint8_t * data);
 
    uint8_t port_cnt;
-   struct iolink_port ports[];
+   struct iolink_port ports[CONFIG_IOLINK_NUM_PORTS];
 } iolink_m_t;
 
 static iolink_m_t * the_master = NULL;
+static iolink_m_t master_inst; // Avoid dynamic memory allocation
 
 static iolink_transmission_rate_t mhmode_to_transmission_rate (
    iolink_mhmode_t mhmode)
@@ -491,8 +492,7 @@ iolink_m_t * iolink_m_init (const iolink_m_cfg_t * m_cfg)
       return NULL;
    }
 
-   iolink_m_t * master =
-      calloc (1, sizeof (iolink_m_t) + sizeof (iolink_port_t) * m_cfg->port_cnt);
+   iolink_m_t * master = &master_inst;
    if (master == NULL)
    {
       return NULL;
