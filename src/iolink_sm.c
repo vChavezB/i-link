@@ -38,6 +38,7 @@
 #include "osal_log.h"
 
 #include <string.h> /* memset */
+#include <iolm/utils.h>
 
 /**
  * @file
@@ -2010,7 +2011,15 @@ static void sm_DL_Read_cnf_cb (iolink_job_t * job)
       uint8_t old_cycletime = real_paramlist->cycletime;
 #endif
       uint8_t new_cycletime     = (value < mincycletime) ? mincycletime : value;
-      real_paramlist->cycletime = new_cycletime;
+      // Enable the use of the user defined cycle time
+      const uint32_t min_cycle_time_us = cyctime_decode_us(new_cycletime);
+      const uint32_t user_cycle_time_us = cyctime_decode_us(sm->config_paramlist.cycletime);
+      if (sm->config_paramlist.cycletime != 0 &&  user_cycle_time_us >= min_cycle_time_us) {
+         real_paramlist->cycletime = sm->config_paramlist.cycletime;
+         new_cycletime = sm->config_paramlist.cycletime;
+      } else {
+         real_paramlist->cycletime = new_cycletime;
+      }
 #ifndef UNIT_TEST
       if (
          (value != FOUR_MS) || (new_cycletime != MIN_CYCL_TIME_2_3) ||
