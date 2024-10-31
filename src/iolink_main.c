@@ -31,6 +31,9 @@
 
 #include <stdlib.h> /* calloc */
 
+
+static K_THREAD_STACK_DEFINE(iolm_stack, CONFIG_IOLINK_MAIN_STACK_SIZE); 
+
 /**
  * @file
  * @brief Handler
@@ -84,10 +87,11 @@ typedef struct iolink_m
       const uint8_t * data);
 
    uint8_t port_cnt;
-   struct iolink_port ports[];
+   struct iolink_port ports[CONFIG_IOLINK_NUM_PORTS];
 } iolink_m_t;
 
 static iolink_m_t * the_master = NULL;
+static iolink_m_t master_inst; // Avoid dynamic memory allocation
 
 static iolink_transmission_rate_t mhmode_to_transmission_rate (
    iolink_mhmode_t mhmode)
@@ -488,8 +492,7 @@ iolink_m_t * iolink_m_init (const iolink_m_cfg_t * m_cfg)
       return NULL;
    }
 
-   iolink_m_t * master =
-      calloc (1, sizeof (iolink_m_t) + sizeof (iolink_port_t) * m_cfg->port_cnt);
+   iolink_m_t * master = &master_inst;
    if (master == NULL)
    {
       return NULL;
@@ -541,8 +544,9 @@ iolink_m_t * iolink_m_init (const iolink_m_cfg_t * m_cfg)
    CC_ASSERT (master->mbox_avail != NULL);
    master->thread = os_thread_create (
       "iolink_m_thread",
-      m_cfg->master_thread_prio,
-      m_cfg->master_thread_stack_size,
+      CONFIG_IOLINK_MASTER_PRIO,
+      iolm_stack,
+      K_THREAD_STACK_SIZEOF(iolm_stack),
       iolink_main,
       master);
    CC_ASSERT (master->thread != NULL);
