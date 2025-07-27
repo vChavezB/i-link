@@ -24,6 +24,7 @@
 #include "iolink_pl_hw_drv.h"
 #include "osal_log.h"
 #include "osal_spi.h"
+#include "osal_irq.h"
 
 
 /**
@@ -47,6 +48,7 @@
 #define MAX14819_IRQ             0x10
 #define MAX14819_ADDR_OFFSET     5
 #define MAX14819_REGISTER_OFFSET 0
+#define MAX14819_NUM_REGISTERS   32
 
 #define REG_TxRxDataA   0x00
 #define REG_TxRxDataB   0x01
@@ -112,6 +114,14 @@
 #define MAX14819_INTERRUPTEN_WURQ          MAX14819_INTERRUPT_WURQ
 #define MAX14819_INTERRUPTEN_STATUS        MAX14819_INTERRUPT_STATUS
 
+#define MAX14819_INTERRUPTEN_MASK_A (MAX14819_INTERRUPT_RX_DATA_RDY_A | \
+                                     MAX14819_INTERRUPT_RX_ERR_A | \
+                                     MAX14819_INTERRUPT_TX_ERR_A)
+
+#define MAX14819_INTERRUPTEN_MASK_B (MAX14819_INTERRUPT_RX_DATA_RDY_B | \
+                                     MAX14819_INTERRUPT_RX_ERR_B | \
+                                     MAX14819_INTERRUPT_TX_ERR_B)
+
 #define MAX14819_REVID_MAX14819          0x0A
 #define MAX14819_REVID_MAX14819A         0x0E
 
@@ -145,6 +155,7 @@ typedef union
 } iolink_14819_cq_cfg_t;
 
 static void iolink_pl_max14819_pl_handler (iolink_hw_drv_t * iolink_hw, void * arg);
+static void iolink_14819_isr (void * arg);
 
 static void iolink_14819_write_register (
    iolink_14819_drv_t * iolink,
@@ -216,16 +227,83 @@ static uint8_t iolink_14819_burst_read_rx (
    uint8_t rxbytes)
 {
    uint8_t rxtxreg                             = REG_TxRxDataA + ch;
-   uint8_t txdata[IOLINK_RXTX_BUFFER_SIZE + 2] = {0};
-   uint8_t rxdata[IOLINK_RXTX_BUFFER_SIZE + 2] = {0};
+   uint8_t txdata[IOLINK_RXTX_BUFFER_SIZE + 1] = {0};
+   uint8_t rxdata[IOLINK_RXTX_BUFFER_SIZE + 1] = {0};
 
    txdata[0] = MAX14819_COMMAND_READ |
                (iolink->chip_address << MAX14819_ADDR_OFFSET) |
                (rxtxreg << MAX14819_REGISTER_OFFSET);
-   _iolink_pl_hw_spi_transfer (iolink->fd_spi, rxdata, txdata, rxbytes + 2);
+   _iolink_pl_hw_spi_transfer (iolink->fd_spi, rxdata, txdata, rxbytes + 1);
    memcpy (data, &rxdata[1], rxbytes);
 
    return rxdata[0];
+}
+
+void iolink_14819_dump_registers (iolink_hw_drv_t * iolink_hw)
+{
+   iolink_14819_drv_t * iolink = (iolink_14819_drv_t *)iolink_hw;
+   int i;
+   static const char * const name[MAX14819_NUM_REGISTERS] =
+   {
+      "TxRxDataA",
+      "TxRxDataB",
+      "Interrupt",
+      "InterruptEn",
+      "RxFIFOLvlA",
+      "RxFIFOLvlB",
+      "CQCtrlA",
+      "CQCtrlB",
+      "CQErrA",
+      "CQErrB",
+      "MsgCtrlA",
+      "MsgCtrlB",
+      "ChanStatA",
+      "ChanStatB",
+      "LEDCtrl",
+      "Trigger",
+      "CQCfgA",
+      "CQCfgB",
+      "CyclTmrA",
+      "CyclTmrB",
+      "DeviceDlyA",
+      "DeviceDlyB",
+      "TrigAssgnA",
+      "TrigAssgnB",
+      "LPCnfgA",
+      "LPCnfgB",
+      "IOStCfgA",
+      "IOStCfgB",
+      "DrvrCurrLim",
+      "Clock",
+      "Status",
+      "RevID",
+   };
+
+   LOG_DEBUG (IOLINK_PL_LOG,
+      "Addr Register     Hex  7654 3210\n");
+
+   for (i = 0; i < MAX14819_NUM_REGISTERS; i++)
+   {
+      uint8_t value;
+
+      os_mutex_lock (iolink->exclusive);
+      value = iolink_14819_read_register (iolink, i);
+      os_mutex_unlock (iolink->exclusive);
+
+      LOG_DEBUG (IOLINK_PL_LOG,
+         "0x%02X %-11s  0x%02X %c%c%c%c %c%c%c%c\n",
+         i,
+         name[i],
+         value,
+         value & BIT (7) ? '1' : '.',
+         value & BIT (6) ? '1' : '.',
+         value & BIT (5) ? '1' : '.',
+         value & BIT (4) ? '1' : '.',
+         value & BIT (3) ? '1' : '.',
+         value & BIT (2) ? '1' : '.',
+         value & BIT (1) ? '1' : '.',
+         value & BIT (0) ? '1' : '.');
+   }
 }
 
 static void iolink_14819_set_DO (
@@ -237,7 +315,7 @@ static void iolink_14819_set_DO (
 
    os_mutex_lock (iolink->exclusive);
    regval = iolink_14819_read_register (iolink, REG_InterruptEn);
-   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(0x05 << ch));
+   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(MAX14819_INTERRUPTEN_MASK_A << ch));
    regval = iolink_14819_read_register (iolink, REG_IOStCfgA + ch);
    iolink_14819_write_register (iolink, REG_IOStCfgA + ch, regval | MAX14819_IOSTCFG_TXEN);
    os_mutex_unlock (iolink->exclusive);
@@ -258,7 +336,7 @@ static void iolink_14819_set_DI (
 
    os_mutex_lock (iolink->exclusive);
    regval = iolink_14819_read_register (iolink, REG_InterruptEn);
-   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(0x05 << ch));
+   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(MAX14819_INTERRUPTEN_MASK_A << ch));
    os_mutex_unlock (iolink->exclusive);
    iolink_14819_write_register (iolink, REG_CQCtrlA + ch, 0x0C);
    iolink_14819_write_register (iolink, REG_MsgCtrlA + ch, 0x01);
@@ -281,7 +359,7 @@ static void iolink_14819_set_SDCI (
    os_mutex_lock (iolink->exclusive);
    // Disable interrupts
    regval = iolink_14819_read_register (iolink, REG_InterruptEn);
-   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(0x05 << ch));
+   iolink_14819_write_register (iolink, REG_InterruptEn, regval & ~(MAX14819_INTERRUPTEN_MASK_A << ch));
    // Set registers according to config
    iolink_14819_write_register (iolink, REG_CQCtrlA + ch, cfg->SDCI.cq_ctrl_val);
    iolink_14819_write_register (iolink, REG_MsgCtrlA + ch, cfg->SDCI.msg_ctrl_val);
@@ -295,10 +373,11 @@ static void iolink_14819_set_SDCI (
    iolink_14819_write_register (iolink, REG_CQCfgA + ch, 0x34);
    // Enable interrupts
    regval = iolink_14819_read_register (iolink, REG_InterruptEn);
+   regval |= cfg->SDCI.IntE & (MAX14819_INTERRUPTEN_MASK_A << ch);
    iolink_14819_write_register (
       iolink,
       REG_InterruptEn,
-      regval | (cfg->SDCI.IntE & (0x05 << ch)));
+      regval);
    iolink->is_iolink[ch] = true;
    os_mutex_unlock (iolink->exclusive);
 }
@@ -360,6 +439,28 @@ static void iolink_14819_set_master_message (
       reg_val &= ~BIT (3);
    }
    iolink_14819_write_register (iolink, regMC, reg_val);
+}
+
+static void iolink_max14819_clear_errors (
+   iolink_14819_drv_t * iolink,
+   iolink_14819_channel_t ch)
+{
+   uint8_t cqerr;
+   uint8_t devdly;
+
+   cqerr = iolink_14819_read_register (iolink, REG_CQErrA + ch);
+   devdly = iolink_14819_read_register (iolink, REG_DeviceDlyA + ch);
+
+   LOG_DEBUG (
+      IOLINK_PL_LOG,
+      "PL: %s [ch: %d]: CQErr=0x%02x, DeviceDly=0x%02x\n",
+      __func__,
+      ch,
+      cqerr,
+      devdly);
+
+   (void)cqerr;
+   (void)devdly;
 }
 
 static iolink_baudrate_t iolink_pl_max14819_get_baudrate (
@@ -579,7 +680,6 @@ static bool iolink_pl_max14819_get_data (
       uint8_t cqctrl = iolink_14819_read_register (iolink, REG_CQCtrlA + ch);
       cqctrl |= MAX14819_CQCTRL_RX_FIFO_RST;
       iolink_14819_write_register (iolink, REG_CQCtrlA + ch, cqctrl);
-      iolink->data_ready[ch] = false;
       os_mutex_unlock (iolink->exclusive);
       return false;
    }
@@ -596,17 +696,15 @@ static bool iolink_pl_max14819_get_data (
       rxbytes = len;
    }
 
-   uint32_t inband = 0;
    if (rxbytes > 0)
    {
-      inband = iolink_14819_burst_read_rx (iolink, ch, rxdata, rxbytes);
+      uint8_t inband = iolink_14819_burst_read_rx (iolink, ch, rxdata, rxbytes);
       if ((inband & MAX14819_SPI_INBAND_IRQ) != 0)
       {
          os_event_set (iolink->dl_event[ch], iolink->pl_flag);
       }
    }
 
-   iolink->data_ready[ch] = false;
    os_mutex_unlock (iolink->exclusive);
 
    return (rxbytes > 0);
@@ -723,6 +821,41 @@ static void iolink_pl_max14819_pl_handler (iolink_hw_drv_t * iolink_hw, void * a
       LOG_ERROR (IOLINK_PL_LOG, "PL: Got status error\n");
    }
 
+   // Check channel specific flags
+   for (ch = 0; ch < MAX14819_NUM_CHANNELS; ch++)
+   {
+      if (reg & (MAX14819_INTERRUPT_TX_ERR_A << ch))
+      {
+         if (iolink->wurq_request[ch])
+         {
+            /* Silence possibly erroneous error
+             *
+             * The TransmErr bit is set while attempting to establish
+             * communication, causing a TxError interrupt. This would indicate
+             * that bits written to CQ line get corrupted. (See data sheet
+             * section "Transmit Loopback Check"). Looking at the CQ line
+             * using a logic analyser does not indicate that any corruption is
+             * going on however. The root cause of the issue is unknown.
+             * Given that the error seems erroneous, logging an error or warning
+             * message does not seem to be warranted.
+             */
+            iolink_max14819_clear_errors (iolink, ch);
+         }
+         else
+         {
+            os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_TXERR);
+         }
+      }
+      if (reg & (MAX14819_INTERRUPT_RX_ERR_A << ch))
+      {
+         os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_RXERR);
+      }
+      if (reg & (MAX14819_INTERRUPT_RX_DATA_RDY_A << ch))
+      {
+         os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_RXRDY);
+      }
+   }
+
    if (reg & MAX14819_INTERRUPT_WURQ)
    {
       bool completed_wurq = false;
@@ -752,61 +885,8 @@ static void iolink_pl_max14819_pl_handler (iolink_hw_drv_t * iolink_hw, void * a
       }
    }
 
-   // Check channel specific flags
-   for (ch = 0; ch < MAX14819_NUM_CHANNELS; ch++)
-   {
-      if (reg & (MAX14819_INTERRUPT_TX_ERR_A << ch))
-      {
-         os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_TXERR);
-      }
-      if (reg & (MAX14819_INTERRUPT_RX_ERR_A << ch))
-      {
-         os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_RXERR);
-      }
-      if (reg & (MAX14819_INTERRUPT_RX_DATA_RDY_A << ch))
-      {
-         if (!iolink->data_ready[ch])
-         {
-            iolink->data_ready[ch] = true;
-            os_event_set (iolink->dl_event[ch], IOLINK_PL_EVENT_RXRDY);
-         }
-      }
-   }
    os_mutex_unlock (iolink->exclusive);
 }
-
-#ifdef __rtk__
-static int iolink_pl_max14819_open (drv_t * drv, const char * name, int flags, int mode)
-{
-   const char * p       = name;
-   unsigned int channel = 0;
-
-   /* Remainder of filename is IO-Link channel */
-   while (*p != '\0')
-   {
-      uint8_t digit = *p++ - '0';
-
-      if (digit > 9)
-      {
-         goto error;
-      }
-
-      channel = channel * 10 + digit;
-   }
-
-   /* Check that channel is valid */
-   if (channel > MAX14819_CH_MAX)
-   {
-      goto error;
-   }
-
-   return channel;
-
-error:
-   errno = ENOENT;
-   return -1;
-}
-#endif
 
 static const iolink_hw_ops_t iolink_hw_ops = {
    .get_baudrate        = iolink_pl_max14819_get_baudrate,
@@ -853,6 +933,14 @@ iolink_hw_drv_t * iolink_14819_init (const iolink_14819_cfg_t * cfg)
    if (iolink->fd_spi == NULL)
    {
       LOG_ERROR (IOLINK_PL_LOG, "PL: Unable to open spi device: %s\n", cfg->spi_slave_name);
+      free (iolink);
+      return NULL;
+   }
+
+   if (_iolink_setup_int (cfg->chip_irq, iolink_14819_isr, iolink) < 0)
+   {
+      LOG_ERROR (IOLINK_APP_LOG, "PL: Failed to setup interrupt %u\n", cfg->chip_irq);
+      _iolink_pl_hw_spi_close(iolink->fd_spi);
       free (iolink);
       return NULL;
    }
@@ -926,7 +1014,13 @@ iolink_hw_drv_t * iolink_14819_init (const iolink_14819_cfg_t * cfg)
    return &iolink->drv;
 }
 
-void iolink_14819_isr (void * arg)
+
+/**
+ * Interrupt service routine for the iolink_max14819 driver instance.
+ *
+ * @param arg     Reference to the driver instance
+ */
+static void iolink_14819_isr (void * arg)
 {
    iolink_14819_drv_t * iolink;
    iolink = (iolink_14819_drv_t *)arg;

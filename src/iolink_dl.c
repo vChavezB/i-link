@@ -108,14 +108,14 @@ static void set_OH_IH_EH_Conf_active (iolink_port_t * port, bool active);
 static void write_master_command (iolink_port_t * port, iolink_status_t errorinfo);
 static void iolink_dl_mh_handle_com_lost (iolink_port_t * port);
 static iolink_error_t OD_req (
-   iolink_dl_t * dl,
+   iolink_port_t * port,
    iolink_rwdirection_t rwdirection,
    iolink_comchannel_t comchannel,
    uint8_t addressctrl,
    uint8_t length,
    uint8_t * data);
 static iolink_error_t PD_req (
-   iolink_dl_t * dl,
+   iolink_port_t * port,
    uint8_t pdinaddress,
    uint8_t pdinlength,
    uint8_t * pdout,
@@ -130,7 +130,7 @@ static iolink_error_t PDInStatus_ind (
    iolink_port_t * port,
    iolink_controlcode_t status);
 static iolink_error_t EventFlag_ind (iolink_dl_t * dl, bool eventflag);
-static iolink_error_t MHInfo_ind (iolink_dl_t * dl, iolink_mhinfo_t mhinfo);
+static iolink_error_t MHInfo_ind (iolink_port_t * port, iolink_mhinfo_t mhinfo);
 static iolink_error_t DL_ReadWriteParam_req (
    iolink_port_t * port,
    uint16_t address,
@@ -140,6 +140,7 @@ static void dl_timer_timeout (os_timer_t * timer, void * arg);
 static void dl_timer_tcyc_timeout (os_timer_t * timer, void * arg);
 static void iolink_dl_wurq_recv (iolink_port_t * port);
 static void iolink_dl_handle_error (iolink_port_t * port);
+static void iolink_dl_handle_reset (iolink_port_t * port);
 static void dl_main (void * arg);
 
 /* State machine of the Master DL-mode handler */
@@ -379,7 +380,7 @@ static void start_timer_initcyc (iolink_dl_t * dl)
       // For COM3 will get_T_initcyc return 435, this is divided by 1000 -> 0
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: get_T_initcyc() < 1000 (%d)\n",
+         "DL: %s: get_T_initcyc() < 1000 (%d)\n",
          __func__,
          (int)timer_val);
       timer_val = 1000;
@@ -575,9 +576,9 @@ static void iolink_dl_mode_h_sm_idle0 (iolink_port_t * port)
          // TODO FIXME: handle this!
          LOG_WARNING (
             IOLINK_DL_LOG,
-            "%s (%u): Unable to start SDCI\n",
-            __func__,
-            iolink_get_portnumber (port));
+            "DL (%u): %s: Unable to start SDCI\n",
+            iolink_get_portnumber (port),
+            __func__);
       }
 #endif
    }
@@ -585,9 +586,9 @@ static void iolink_dl_mode_h_sm_idle0 (iolink_port_t * port)
    {
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: IDLE_0: Unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IDLE_0: Unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -628,9 +629,9 @@ static void iolink_dl_mode_h_sm_startup2 (iolink_port_t * port)
    {
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: STARTUP_2: Unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: STARTUP_2: Unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -659,9 +660,9 @@ static void iolink_dl_mode_h_sm_preoperate3 (iolink_port_t * port)
    {
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: PREOPERATE_3: Unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: PREOPERATE_3: Unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -689,9 +690,9 @@ static void iolink_dl_mode_h_sm_operate4 (iolink_port_t * port)
    {
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: OPERATE_4: Unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: OPERATE_4: Unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -720,7 +721,8 @@ static void iolink_dl_mode_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d:\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->mode_handler.state);
       break;
@@ -755,14 +757,14 @@ static void iolink_dl_mh_handle_com_lost (iolink_port_t * port)
    iolink_dl_t * dl = iolink_get_dl_ctx (port);
 
    dl->timer_type = IOL_DL_TIMER_NONE;
-   MHInfo_ind (dl, IOLINK_MHINFO_COMLOST);
+   MHInfo_ind (port, IOLINK_MHINFO_COMLOST);
    dl->message_handler.rwcmd = IOL_MHRW_NONE;
 
    LOG_ERROR (
       IOLINK_DL_LOG,
-      "%s: Communication lost on port %d (MH state: %s)\n",
-      __func__,
+      "DL (%u): %s: Communication lost (MH state: %s)\n",
       iolink_get_portnumber (port),
+      __func__,
       iolink_dl_mh_st_literals[dl->message_handler.state]);
 
    dl->message_handler.state = IOL_DL_MH_ST_INACTIVE_0;
@@ -832,10 +834,10 @@ static void iolink_dl_message_h_sm_startup2 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
    }
 }
 
@@ -878,10 +880,10 @@ static void iolink_dl_message_h_sm_await_reply4 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
    }
 }
 
@@ -892,7 +894,7 @@ static void iolink_dl_message_h_sm_error_handling5 (iolink_port_t * port)
    if (dl->message_handler.retry >= IOLINK_MAX_RETRY) // T11
    {
       dl->timer_type = IOL_DL_TIMER_NONE;
-      MHInfo_ind (dl, IOLINK_MHINFO_COMLOST);
+      MHInfo_ind (port, IOLINK_MHINFO_COMLOST);
       dl->message_handler.state = IOL_DL_MH_ST_INACTIVE_0;
       os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
 
@@ -919,10 +921,10 @@ static void iolink_dl_message_h_sm_error_handling5 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
    }
 }
 
@@ -943,7 +945,7 @@ static void iolink_dl_message_h_sm_preoperate6 (iolink_port_t * port)
    }
    else if (dl->message_handler.mhcmd == IOL_MHCMD_INACTIVE) // T36
    {
-      MHInfo_ind (dl, IOLINK_MHINFO_COMLOST);
+      MHInfo_ind (port, IOLINK_MHINFO_COMLOST);
       os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
 #if IOLINK_HW == IOLINK_HW_MAX14819
       PL_Transfer_req (
@@ -972,10 +974,10 @@ static void iolink_dl_message_h_sm_preoperate6 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
    }
 }
 
@@ -993,7 +995,11 @@ static void iolink_dl_message_h_sm_get_od7 (iolink_port_t * port)
       dl->od_handler.od_rxlen + 1,
       dl->od_handler.od_txlen + 2,
       dl->txbuffer);
-   LOG_DEBUG (IOLINK_DL_LOG, "%s: Message sent (PreOp)\n", __func__);
+   LOG_DEBUG (
+      IOLINK_DL_LOG,
+      "DL (%u): %s: Message sent (PreOp)\n",
+      iolink_get_portnumber (port),
+      __func__);
    dl->message_handler.state = IOL_DL_MH_ST_RESPONSE_8; // T18
 #endif
 }
@@ -1048,10 +1054,10 @@ static void iolink_dl_message_h_sm_await_reply9 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
       dl->cqerr  = 0;
       dl->devdly = 0;
       iolink_pl_get_error (port, &dl->cqerr, &dl->devdly);
@@ -1098,10 +1104,10 @@ static void iolink_dl_message_h_sm_error_handling10 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
    }
 }
 
@@ -1124,7 +1130,7 @@ static void iolink_dl_message_h_sm_operate12 (iolink_port_t * port)
    }
    else if (dl->message_handler.mhcmd == IOL_MHCMD_INACTIVE) // T35
    {
-      MHInfo_ind (dl, IOLINK_MHINFO_COMLOST);
+      MHInfo_ind (port, IOLINK_MHINFO_COMLOST);
       os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
 #if IOLINK_HW == IOLINK_HW_MAX14819
       PL_DisableCycleTimer (port);
@@ -1169,13 +1175,18 @@ static void iolink_dl_message_h_sm_get_od14 (iolink_port_t * port)
    dl->message_handler.retry = 0;
    dl->dataready             = false;
 #if IOLINK_HW == IOLINK_HW_MAX14819
+   iolink_pl_set_cycletime (port, dl->cycbyte);
    PL_EnableCycleTimer (port);
    PL_Transfer_req (
       port,
       dl->od_handler.od_rxlen + dl->pd_handler.pd_rxlen + 1,
       dl->od_handler.od_txlen + dl->pd_handler.pd_txlen + 2,
       dl->txbuffer);
-   LOG_DEBUG (IOLINK_DL_LOG, "%s: Message sent\n", __func__);
+   LOG_DEBUG (
+      IOLINK_DL_LOG,
+      "DL (%u): %s: Message sent\n",
+      iolink_get_portnumber (port),
+      __func__);
 #endif
    dl->message_handler.state = IOL_DL_MH_ST_RESPONSE_15; // T29
 }
@@ -1202,7 +1213,7 @@ static void iolink_dl_message_h_sm_await_reply16 (iolink_port_t * port)
    }
    else if (dl->message_handler.mhcmd == IOL_MHCMD_INACTIVE) // T35
    {
-      MHInfo_ind (dl, IOLINK_MHINFO_COMLOST);
+      MHInfo_ind (port, IOLINK_MHINFO_COMLOST);
       os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
 #if IOLINK_HW == IOLINK_HW_MAX14819
       PL_DisableCycleTimer (port);
@@ -1283,11 +1294,11 @@ static void iolink_dl_message_h_sm_await_reply16 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: %s on Port %d\n",
+         "DL (%u): %s: %s: Error rx-timeout: %d, rx: %d, tx: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          iolink_dl_mh_st_literals[dl->message_handler.state],
-         (dl->rxtimeout) ? "RXTimeout" : "RXError",
-         iolink_get_portnumber (port));
+         dl->rxtimeout, dl->rxerror, dl->txerror);
 
       if (dl->message_handler.retry >= IOLINK_MAX_RETRY) // T33
       {
@@ -1300,10 +1311,10 @@ static void iolink_dl_message_h_sm_await_reply16 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: %s: unknown event triggered. Port %d\n",
+         "DL (%u): %s: %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
          __func__,
-         iolink_dl_mh_st_literals[dl->message_handler.state],
-         iolink_get_portnumber (port));
+         iolink_dl_mh_st_literals[dl->message_handler.state]);
       dl->cqerr  = 0;
       dl->devdly = 0;
       iolink_pl_get_error (port, &dl->cqerr, &dl->devdly);
@@ -1332,10 +1343,10 @@ static void iolink_dl_message_h_sm_error_handling17 (iolink_port_t * port)
       {
          LOG_ERROR (
             IOLINK_DL_LOG,
-            "%s: %s: Rxdata arrived too late. Trying to recover. Port %d\n",
+            "DL (%u): %s: %s: Rxdata arrived too late. Trying to recover\n",
+            iolink_get_portnumber (port),
             __func__,
-            iolink_dl_mh_st_literals[dl->message_handler.state],
-            iolink_get_portnumber (port));
+            iolink_dl_mh_st_literals[dl->message_handler.state]);
          dl->message_handler.cks =
             dl->rxbuffer[dl->od_handler.od_rxlen + dl->pd_handler.pd_rxlen];
          PDInStatus_ind (port, getCKSPDIn (dl));
@@ -1352,10 +1363,10 @@ static void iolink_dl_message_h_sm_error_handling17 (iolink_port_t * port)
       {
          LOG_ERROR (
             IOLINK_DL_LOG,
-            "%s: %s: unknown event triggered. Port %d\n",
+            "DL (%u): %s: %s: unknown event triggered\n",
+            iolink_get_portnumber (port),
             __func__,
-            iolink_dl_mh_st_literals[dl->message_handler.state],
-            iolink_get_portnumber (port));
+            iolink_dl_mh_st_literals[dl->message_handler.state]);
       }
    }
 }
@@ -1425,7 +1436,8 @@ static void iolink_dl_message_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d:\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->message_handler.state);
       break;
@@ -1435,7 +1447,8 @@ static void iolink_dl_message_h_sm (iolink_port_t * port)
    {
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: state change: %s -> %s\n",
+         "DL (%u): %s: state change: %s -> %s\n",
+         iolink_get_portnumber (port),
          __func__,
          iolink_dl_mh_st_literals[previous],
          iolink_dl_mh_st_literals[dl->message_handler.state]);
@@ -1457,15 +1470,15 @@ static void iolink_dl_pd_h_sm_inactive0 (iolink_port_t * port)
    else if (dl->pd_handler.trigger != IOL_TRIGGERED_NONE) // T1
    {
       dl->pd_handler.trigger = IOL_TRIGGERED_NONE;
-      PD_req (dl, 0, 0, NULL, 0, 0);
+      PD_req (port, 0, 0, NULL, 0, 0);
    }
    else
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: INACTIVE_0: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: INACTIVE_0: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1477,7 +1490,7 @@ static void iolink_dl_pd_h_sm_pd_single1 (iolink_port_t * port)
    {
       dl->pd_handler.trigger = IOL_TRIGGERED_NONE;
       PD_req (
-         dl,
+         port,
          0,
          dl->pd_handler.pd_rxlen,
          dl->pd_handler.pdoutdata,
@@ -1500,11 +1513,11 @@ static void iolink_dl_pd_h_sm_pd_single1 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: PDSINGLE_1: unknown event triggered (t:%d, c:%d). Port %d\n",
+         "DL (%u): %s: PDSINGLE_1: unknown event triggered (t:%d, c:%d)\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->pd_handler.trigger,
-         dl->pd_handler.phcmd,
-         iolink_get_portnumber (port));
+         dl->pd_handler.phcmd);
    }
 }
 
@@ -1520,7 +1533,7 @@ static void iolink_dl_pd_h_sm_pd_in_interleave2 (iolink_port_t * port)
    {
       dl->pd_handler.trigger = IOL_TRIGGERED_NONE;
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_READ,
          IOLINK_COMCHANNEL_PROCESS,
          dl->pd_handler.pd_address,
@@ -1555,9 +1568,9 @@ static void iolink_dl_pd_h_sm_pd_in_interleave2 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: PDININTERLEAVE_2: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: PDININTERLEAVE_2: unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1572,9 +1585,9 @@ static void iolink_dl_pd_h_sm_pd_out_interleave3 (iolink_port_t * port)
    else if (dl->pd_handler.trigger == IOL_TRIGGERED_MASTER_MESSAGE) // T7
    {
       dl->pd_handler.trigger = IOL_TRIGGERED_NONE;
-      PD_req (dl, 0, 0, dl->pd_handler.pdoutdata, dl->pd_handler.pd_address, 2);
+      PD_req (port, 0, 0, dl->pd_handler.pdoutdata, dl->pd_handler.pd_address, 2);
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_WRITE,
          IOLINK_COMCHANNEL_PROCESS,
          dl->pd_handler.pd_address,
@@ -1606,9 +1619,9 @@ static void iolink_dl_pd_h_sm_pd_out_interleave3 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: PDOUTINTERLEAVE_3: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: PDOUTINTERLEAVE_3: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1634,7 +1647,8 @@ static void iolink_dl_pd_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->pd_handler.state);
       break;
@@ -1653,7 +1667,7 @@ static void iolink_dl_isdu_h_sm_isdu_error4 (iolink_port_t * port)
    {
       dl->isdu_handler.total_isdu_seg = 0;
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_READ,
          IOLINK_COMCHANNEL_ISDU,
          IOLINK_FLOWCTRL_ABORT,
@@ -1765,9 +1779,9 @@ static void iolink_dl_isdu_h_sm_inactive0 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1791,7 +1805,7 @@ static void iolink_dl_isdu_h_sm_idle1 (iolink_port_t * port)
       {
       case IOL_MHRW_ISDUTRANSPORT:
          OD_req (
-            dl,
+            port,
             IOLINK_RWDIRECTION_WRITE,
             IOLINK_COMCHANNEL_ISDU,
             IOLINK_FLOWCTRL_START,
@@ -1802,7 +1816,7 @@ static void iolink_dl_isdu_h_sm_idle1 (iolink_port_t * port)
          break;
       case IOL_MHRW_READPARAM: // T13
          OD_req (
-            dl,
+            port,
             IOLINK_RWDIRECTION_READ,
             IOLINK_COMCHANNEL_PAGE,
             dl->od_handler.data_addr,
@@ -1811,7 +1825,7 @@ static void iolink_dl_isdu_h_sm_idle1 (iolink_port_t * port)
          break;
       case IOL_MHRW_WRITEPARAM: // T13
          OD_req (
-            dl,
+            port,
             IOLINK_RWDIRECTION_WRITE,
             IOLINK_COMCHANNEL_PAGE,
             dl->od_handler.data_addr,
@@ -1820,7 +1834,7 @@ static void iolink_dl_isdu_h_sm_idle1 (iolink_port_t * port)
          break;
       default: // T14
          OD_req (
-            dl,
+            port,
             IOLINK_RWDIRECTION_READ,
             IOLINK_COMCHANNEL_ISDU,
             IOLINK_FLOWCTRL_IDLE_1,
@@ -1849,9 +1863,9 @@ static void iolink_dl_isdu_h_sm_idle1 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IDLE_1: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IDLE_1: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1868,7 +1882,7 @@ static void iolink_dl_isdu_h_sm_isdu_request2 (iolink_port_t * port)
    else if (dl->od_handler.trigger == IOL_TRIGGERED_MASTER_MESSAGE)
    {
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_WRITE,
          IOLINK_COMCHANNEL_ISDU,
          dl->isdu_handler.current_isdu_seg % 16,
@@ -1894,10 +1908,9 @@ static void iolink_dl_isdu_h_sm_isdu_request2 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ISDUH_ST_ISDUREQUEST_2: unknown event triggered."
-         " Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IOL_DL_ISDUH_ST_ISDUREQUEST_2: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1917,7 +1930,7 @@ static void iolink_dl_isdu_h_sm_isdu_wait3 (iolink_port_t * port)
    else if (dl->od_handler.trigger == IOL_TRIGGERED_MASTER_MESSAGE)
    {
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_READ,
          IOLINK_COMCHANNEL_ISDU,
          IOLINK_FLOWCTRL_START,
@@ -1941,7 +1954,11 @@ static void iolink_dl_isdu_h_sm_isdu_wait3 (iolink_port_t * port)
       else if (dl->isdu_handler.isdu_data[0] == 0)
       {
          // No service
-         LOG_INFO (IOLINK_DL_LOG, "%s: ISDUWait. No service!\n", __func__);
+         LOG_INFO (
+            IOLINK_DL_LOG,
+            "DL (%u): %s: ISDUWait. No service!\n",
+            iolink_get_portnumber (port),
+            __func__);
          isdu_timer_reset (dl);
          iolink_dl_isdu_h_sm_enter_isduerror4 (port); // T9
       }
@@ -1977,10 +1994,9 @@ static void iolink_dl_isdu_h_sm_isdu_wait3 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ISDUH_ST_ISDUWAIT_3: unknown event triggered."
-         " Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IOL_DL_ISDUH_ST_ISDUWAIT_3: unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -1997,7 +2013,7 @@ static void iolink_dl_isdu_h_sm_isdu_response5 (iolink_port_t * port)
    else if (dl->od_handler.trigger == IOL_TRIGGERED_MASTER_MESSAGE)
    {
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_READ,
          IOLINK_COMCHANNEL_ISDU,
          dl->isdu_handler.current_isdu_seg % 16,
@@ -2028,10 +2044,9 @@ static void iolink_dl_isdu_h_sm_isdu_response5 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ISDUH_ST_ISDURESPONSE_5: unknown event triggered."
-         " Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IOL_DL_ISDUH_ST_ISDURESPONSE_5: unknown event triggered.\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -2063,7 +2078,8 @@ static void iolink_dl_isdu_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d:\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->isdu_handler.state);
       break;
@@ -2086,9 +2102,9 @@ static void iolink_dl_cmd_h_sm (iolink_port_t * port)
       {
          LOG_ERROR (
             IOLINK_DL_LOG,
-            "%s: INACTIVE_0: unknown event triggered. Port %d\n",
-            __func__,
-            iolink_get_portnumber (port));
+            "DL (%u): %s: INACTIVE_0: unknown event triggered\n",
+            iolink_get_portnumber (port),
+            __func__);
       }
       break;
    case IOL_DL_CMDH_ST_IDLE_1:
@@ -2117,14 +2133,14 @@ static void iolink_dl_cmd_h_sm (iolink_port_t * port)
       {
          LOG_ERROR (
             IOLINK_DL_LOG,
-            "%s: IDLE_1: unknown event triggered. Port %d\n",
-            __func__,
-            iolink_get_portnumber (port));
+            "DL (%u): %s: IDLE_1: unknown event triggered\n",
+            iolink_get_portnumber (port),
+            __func__);
       }
       break;
    case IOL_DL_CMDH_ST_MASTERCOMMAND_2:
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_WRITE,
          IOLINK_COMCHANNEL_PAGE,
          0,
@@ -2137,7 +2153,8 @@ static void iolink_dl_cmd_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_IDLE_1: Invalid state: %d:\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_IDLE_1: Invalid state: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->cmd_handler.state);
       break;
@@ -2156,9 +2173,9 @@ static void iolink_dl_ev_h_sm_inactive0 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_IDLE_1: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IOL_DL_EVH_ST_IDLE_1: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -2176,7 +2193,8 @@ static void iolink_dl_ev_h_sm_idle1 (iolink_port_t * port)
       {
          LOG_DEBUG (
             IOLINK_DL_LOG,
-            "%s: IOL_DL_EVH_ST_IDLE_1: Event confirmation.\n",
+            "DL (%u): %s: IOL_DL_EVH_ST_IDLE_1: Event confirmation.\n",
+            iolink_get_portnumber (port),
             __func__);
          dl->event_handler.state = IOL_DL_EVH_ST_EVENTCONFIRMATION_4; // T7
 
@@ -2188,11 +2206,12 @@ static void iolink_dl_ev_h_sm_idle1 (iolink_port_t * port)
          {
             LOG_DEBUG (
                IOLINK_DL_LOG,
-               "%s: IOL_DL_EVH_ST_IDLE_1: Written %d to StatusCode.\n",
+               "DL (%u): %s: IOL_DL_EVH_ST_IDLE_1: Written %d to StatusCode.\n",
+               iolink_get_portnumber (port),
                __func__,
                dl->txbuffer[0]);
             OD_req (
-               dl,
+               port,
                IOLINK_RWDIRECTION_WRITE,
                IOLINK_COMCHANNEL_DIAGNOSIS,
                0,
@@ -2212,7 +2231,7 @@ static void iolink_dl_ev_h_sm_idle1 (iolink_port_t * port)
             0,
             sizeof (event_t) * IOLINK_MAX_EVENTS);
          OD_req (
-            dl,
+            port,
             IOLINK_RWDIRECTION_READ,
             IOLINK_COMCHANNEL_DIAGNOSIS,
             dl->event_handler.ev_addr,
@@ -2225,8 +2244,9 @@ static void iolink_dl_ev_h_sm_idle1 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_IDLE_1: unknown event triggered."
+         "DL (%u): %s: IOL_DL_EVH_ST_IDLE_1: unknown event triggered."
          " Trigger: %d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.trigger);
    }
@@ -2244,11 +2264,12 @@ static void iolink_dl_ev_h_sm_read_event2 (iolink_port_t * port)
    {
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: Issue read address %d.\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Issue read address %d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->event_handler.ev_addr);
       OD_req (
-         dl,
+         port,
          IOLINK_RWDIRECTION_READ,
          IOLINK_COMCHANNEL_DIAGNOSIS,
          dl->event_handler.ev_addr,
@@ -2270,10 +2291,9 @@ static void iolink_dl_ev_h_sm_read_event2 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: unknown event triggered."
-         " Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -2288,7 +2308,8 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_status_code (iolink_port_t 
    {
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: Read address %d.\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Read address %d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->event_handler.ev_addr);
       // Event details
@@ -2313,7 +2334,8 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_status_code (iolink_port_t 
    {
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: No details event (StatusCode: 0x%X)\n",
+         "DL (%u): %s: No details event (StatusCode: 0x%X)\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->event_handler.status_code);
 
@@ -2343,7 +2365,8 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_event_memory_byte (iolink_p
    case 1:
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: Read qualifier: %d\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Read qualifier: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->rxbuffer[0]);
       dl->event_handler.events[dl->event_handler.ev_current]
@@ -2353,7 +2376,8 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_event_memory_byte (iolink_p
    case 2:
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: Read MSB: %d\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Read MSB: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->rxbuffer[0]);
       dl->event_handler.events[dl->event_handler.ev_current]
@@ -2363,7 +2387,8 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_event_memory_byte (iolink_p
    case 3:
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_READEVENT_2: Read LSB: %d\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Read LSB: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->rxbuffer[0]);
       dl->event_handler.events[dl->event_handler.ev_current]
@@ -2387,11 +2412,11 @@ static void iolink_dl_ev_h_sm_read_event2_for_device_event_memory_byte (iolink_p
          {
             LOG_ERROR (
                IOLINK_DL_LOG,
-               "%s: IOL_DL_EVH_ST_READEVENT_2:"
+               "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2:"
                " Mismatch between number of events indicated and "
-               "read. Port %d\n",
-               __func__,
-               iolink_get_portnumber (port));
+               "read\n",
+               iolink_get_portnumber (port),
+               __func__);
          }
          dl->event_handler.ev_current = 0;
 
@@ -2410,7 +2435,8 @@ static void iolink_dl_ev_h_sm_signal_event3 (iolink_port_t * port)
 
    LOG_DEBUG (
       IOLINK_DL_LOG,
-      "%s: IOL_DL_EVH_ST_READEVENT_2: Signal events\n",
+      "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Signal events\n",
+      iolink_get_portnumber (port),
       __func__);
    dl->event_handler.state = IOL_DL_EVH_ST_SIGNALEVENT_3; // T4
 
@@ -2469,7 +2495,8 @@ static void iolink_dl_ev_h_sm_signal_event3 (iolink_port_t * port)
 
    LOG_DEBUG (
       IOLINK_DL_LOG,
-      "%s: IOL_DL_EVH_ST_READEVENT_2: Return to IDLE\n",
+      "DL (%u): %s: IOL_DL_EVH_ST_READEVENT_2: Return to IDLE\n",
+      iolink_get_portnumber (port),
       __func__);
    dl->event_handler.event_confirmation = true;
    dl->event_handler.state = IOL_DL_EVH_ST_IDLE_1; // T5
@@ -2495,7 +2522,8 @@ static void iolink_dl_ev_h_sm (iolink_port_t * port)
       // Not used. Inlined
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_EVH_ST_%s: State not used, yet entered.\n",
+         "DL (%u): %s: IOL_DL_EVH_ST_%s: State not used, yet entered.\n",
+         iolink_get_portnumber (port),
          __func__,
          (dl->event_handler.state == IOL_DL_EVH_ST_SIGNALEVENT_3)
             ? "SIGNALEVENT_3"
@@ -2505,7 +2533,8 @@ static void iolink_dl_ev_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->event_handler.state);
       break;
@@ -2524,9 +2553,9 @@ static void iolink_dl_od_h_sm_inactive0 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: INACTIVE_0: unknown event triggered. Port %d\n",
-         __func__,
-         iolink_get_portnumber (port));
+         "DL (%u): %s: INACTIVE_0: unknown event triggered\n",
+         iolink_get_portnumber (port),
+         __func__);
    }
 }
 
@@ -2559,7 +2588,8 @@ static void iolink_dl_od_h_sm_isdu1 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ODH_ST_ISDU_1: unknown event triggered. Trigger: %d.\n",
+         "DL (%u): %s: IOL_DL_ODH_ST_ISDU_1: unknown event triggered. Trigger: %d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.trigger);
    }
@@ -2595,8 +2625,9 @@ static void iolink_dl_od_h_sm_command2 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ODH_ST_COMMAND_2: unknown event triggered. Trigger: "
+         "DL (%u): %s: IOL_DL_ODH_ST_COMMAND_2: unknown event triggered. Trigger: "
          "%d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.trigger);
    }
@@ -2621,7 +2652,8 @@ static void iolink_dl_od_h_sm_event3 (iolink_port_t * port)
    {
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: Event ended. Back to ISDU. Trigger: %d\n",
+         "DL (%u): %s: Event ended. Back to ISDU. Trigger: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.trigger);
       dl->od_handler.state = IOL_DL_ODH_ST_ISDU_1; // T6
@@ -2635,8 +2667,9 @@ static void iolink_dl_od_h_sm_event3 (iolink_port_t * port)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: IOL_DL_ODH_ST_EVENT_3: unknown event triggered. Trigger: "
+         "DL (%u): %s: IOL_DL_ODH_ST_EVENT_3: unknown event triggered. Trigger: "
          "%d.\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.trigger);
    }
@@ -2664,7 +2697,8 @@ static void iolink_dl_od_h_sm (iolink_port_t * port)
       /* This should never happen */
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Invalid state: %d:\n",
+         "DL (%u): %s: Invalid state: %d:\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->od_handler.state);
       break;
@@ -2675,16 +2709,23 @@ static void iolink_dl_od_h_sm (iolink_port_t * port)
  * DL-A services
  */
 static iolink_error_t OD_req (
-   iolink_dl_t * dl,
+   iolink_port_t * port,
    iolink_rwdirection_t rwdirection,
    iolink_comchannel_t comchannel,
    uint8_t addressctrl,
    uint8_t length,
    uint8_t * data)
 {
+   iolink_dl_t * dl = iolink_get_dl_ctx (port);
+
    if (length > 32)
    {
-      LOG_ERROR (IOLINK_DL_LOG, "%s: length not valid: %d\n", __func__, length);
+      LOG_ERROR (
+         IOLINK_DL_LOG,
+         "DL (%u): %s: length not valid: %d\n",
+         iolink_get_portnumber (port),
+         __func__,
+         length);
 
       return IOLINK_ERROR_ODLENGTH;
    }
@@ -2693,7 +2734,8 @@ static iolink_error_t OD_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: address not valid: %d\n",
+         "DL (%u): %s: address not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          addressctrl);
 
@@ -2708,7 +2750,8 @@ static iolink_error_t OD_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: com channel not valid: %d\n",
+         "DL (%u): %s: com channel not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          comchannel);
 
@@ -2749,18 +2792,21 @@ static iolink_error_t OD_req (
 }
 
 static iolink_error_t PD_req (
-   iolink_dl_t * dl,
+   iolink_port_t * port,
    uint8_t pdinaddress,
    uint8_t pdinlength,
    uint8_t * pdout,
    uint8_t pdoutaddress,
    uint8_t pdoutlength)
 {
+   iolink_dl_t * dl = iolink_get_dl_ctx (port);
+
    if (pdinlength > 32)
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: pdinlength not valid: %d\n",
+         "DL (%u): %s: pdinlength not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          pdinlength);
 
@@ -2770,7 +2816,8 @@ static iolink_error_t PD_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: pdoutlength not valid: %d\n",
+         "DL (%u): %s: pdoutlength not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          pdoutlength);
 
@@ -2823,10 +2870,15 @@ static iolink_error_t EventFlag_ind (iolink_dl_t * dl, bool eventflag)
    return IOLINK_ERROR_NONE;
 }
 
-static iolink_error_t MHInfo_ind (iolink_dl_t * dl, iolink_mhinfo_t mhinfo)
+static iolink_error_t MHInfo_ind (iolink_port_t * port, iolink_mhinfo_t mhinfo)
 {
+   iolink_dl_t * dl = iolink_get_dl_ctx (port);
    dl->mode_handler.mhinfo = mhinfo;
-   LOG_DEBUG (IOLINK_DL_LOG, "%s: Mode H triggered by MHInfo\n", __func__);
+   LOG_DEBUG (
+      IOLINK_DL_LOG,
+      "DL (%u): %s: Mode H triggered by MHInfo\n",
+      iolink_get_portnumber (port),
+      __func__);
    os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
 
    return IOLINK_ERROR_NONE;
@@ -2844,7 +2896,8 @@ static iolink_error_t DL_ReadWrite_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s (%s): State not valid: %d\n",
+         "DL (%u): %s (%s): State not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          (write) ? "Write" : "Read",
          dl->message_handler.state);
@@ -2864,7 +2917,8 @@ static iolink_error_t DL_ReadWrite_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s (%s): Address not valid. Must be 15 or less: %d\n",
+         "DL (%u): %s (%s): Address not valid. Must be 15 or less: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          (write) ? "Write" : "Read",
          address);
@@ -2912,7 +2966,7 @@ static iolink_error_t DL_ReadWrite_req (
    dl->od_handler.od_rxlen   = (write) ? 0 : 1;
    dl->od_handler.od_txlen   = (write) ? 1 : 0;
    dl->message_handler.rwcmd = (write) ? IOL_MHRW_WRITE : IOL_MHRW_READ;
-   // LOG_DEBUG(IOLINK_DL_LOG, "Message H triggered by DL_%s\n", (write) ?
+   // LOG_DEBUG(IOLINK_DL_LOG, "DL (%u): Message H triggered by DL_%s\n", iolink_get_portnumber (port), (write) ?
    // "Write" : "Read");
    os_event_set (dl->event, IOLINK_DL_EVENT_MH);
 
@@ -2940,7 +2994,12 @@ iolink_error_t DL_SetMode_req (
       (mode != IOLINK_DLMODE_INACTIVE) && (mode != IOLINK_DLMODE_STARTUP) &&
       (mode != IOLINK_DLMODE_PREOPERATE) && (mode != IOLINK_DLMODE_OPERATE))
    {
-      LOG_ERROR (IOLINK_DL_LOG, "%s: Mode not valid: %d\n", __func__, mode);
+      LOG_ERROR (
+         IOLINK_DL_LOG,
+         "DL (%u): %s: Mode not valid: %d\n",
+         iolink_get_portnumber (port),
+         __func__,
+         mode);
 
       return IOLINK_ERROR_MODE_INVALID;
    }
@@ -2964,7 +3023,8 @@ iolink_error_t DL_SetMode_req (
 
    LOG_DEBUG (
       IOLINK_DL_LOG,
-      "%s: Mode H triggered by DL_SetMode (mode = %d)\n",
+      "DL (%u): %s: Mode H triggered by DL_SetMode (mode = %d)\n",
+      iolink_get_portnumber (port),
       __func__,
       mode);
    os_event_set (dl->event, IOLINK_DL_EVENT_MDH);
@@ -2989,7 +3049,8 @@ static iolink_error_t DL_ReadWriteParam_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s (%s): State not valid: %d\n",
+         "DL (%u): %s (%s): State not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          (write) ? "Write" : "Read",
          dl->message_handler.state);
@@ -3009,7 +3070,8 @@ static iolink_error_t DL_ReadWriteParam_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s (%s): Address not valid. Must be 31 or less: %d\n",
+         "DL (%u): %s (%s): Address not valid. Must be 31 or less: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          (write) ? "Write" : "Read",
          address);
@@ -3203,7 +3265,8 @@ iolink_error_t DL_Write_Devicemode_req (
    {
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: State not valid: %d\n",
+         "DL (%u): %s: State not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->mode_handler.state);
       DL_Write_Devicemode_cnf (
@@ -3256,7 +3319,8 @@ iolink_error_t DL_Write_Devicemode_req (
       {
          LOG_DEBUG (
             IOLINK_DL_LOG,
-            "%s: Message H triggered by DL_Write_Devicemode_req\n",
+            "DL (%u): %s: Message H triggered by DL_Write_Devicemode_req\n",
+            iolink_get_portnumber (port),
             __func__);
          os_event_set (dl->event, IOLINK_DL_EVENT_MH);
       }
@@ -3361,7 +3425,8 @@ static void iolink_dl_wurq_recv (iolink_port_t * port)
    default:
       LOG_ERROR (
          IOLINK_DL_LOG,
-         "%s: Baudrate not valid: %d\n",
+         "DL (%u): %s: Baudrate not valid: %d\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->baudrate);
       DL_Mode_ind_baud (port, IOLINK_MHMODE_INACTIVE);
@@ -3387,7 +3452,8 @@ static void iolink_dl_handle_error (iolink_port_t * port)
       dl->rxtimeout = true;
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: Reception timeout: %x\n",
+         "DL (%u): %s: Reception timeout: %x\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->devdly);
    }
@@ -3396,7 +3462,8 @@ static void iolink_dl_handle_error (iolink_port_t * port)
       dl->rxerror = true;
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: Reception error: %x\n",
+         "DL (%u): %s: Reception error: %x\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->cqerr);
    }
@@ -3405,7 +3472,8 @@ static void iolink_dl_handle_error (iolink_port_t * port)
       dl->txerror = true;
       LOG_WARNING (
          IOLINK_DL_LOG,
-         "%s: Transmission error: %x\n",
+         "DL (%u): %s: Transmission error: %x\n",
+         iolink_get_portnumber (port),
          __func__,
          dl->cqerr);
    }
@@ -3428,7 +3496,8 @@ static void iolink_dl_handle_timer_timeout (iolink_port_t * port)
    case IOL_DL_TIMER_TINITCYC_MH:
       LOG_DEBUG (
          IOLINK_DL_LOG,
-         "%s: TInitcyc timed out. IOL_DL_MH state: %s\n",
+         "DL (%u): %s: TInitcyc timed out. IOL_DL_MH state: %s\n",
+         iolink_get_portnumber (port),
          __func__,
          iolink_dl_mh_st_literals[dl->message_handler.state]);
       dl->timer_elapsed = true;
@@ -3454,7 +3523,7 @@ static void dl_main (void * arg)
                    IOLINK_PL_EVENT_RXERR | IOLINK_PL_EVENT_TXERR |
                    IOLINK_PL_EVENT_WURQ | IOLINK_DL_EVENT_MDH |
                    IOLINK_DL_EVENT_MH | IOLINK_DL_EVENT_TIMEOUT |
-                   IOLINK_DL_EVENT_TIMEOUT_TCYC;
+                   IOLINK_DL_EVENT_TIMEOUT_TCYC | IOLINK_DL_EVENT_RESET;
    uint32_t event_timeout = (uint32_t)-1;
 
    /* Main loop */
@@ -3522,14 +3591,28 @@ static void dl_main (void * arg)
             // Timer timeout
             iolink_dl_handle_timer_timeout (port);
          }
+
+         if (dl->triggered_events & IOLINK_DL_EVENT_RESET)
+         {
+            iolink_dl_handle_reset (port);
+         }
       }
    }
 }
 
 void iolink_dl_reset (iolink_port_t * port)
 {
-   LOG_DEBUG (IOLINK_DL_LOG, "%s\n", __func__);
+   LOG_DEBUG (
+      IOLINK_DL_LOG,
+      "DL (%u): %s\n",
+      iolink_get_portnumber (port),
+      __func__);
+   iolink_dl_t * dl = iolink_get_dl_ctx (port);
+   os_event_set (dl->event, IOLINK_DL_EVENT_RESET);
+}
 
+static void iolink_dl_handle_reset (iolink_port_t * port)
+{
    iolink_dl_t * dl = iolink_get_dl_ctx (port);
 
    memset (&dl->mode_handler, 0, sizeof (mode_h_t));
@@ -3576,7 +3659,7 @@ void iolink_dl_instantiate (
    unsigned int thread_prio,
    size_t thread_stack_size)
 {
-   iolink_dl_reset (port);
+   iolink_dl_handle_reset (port);
 
    iolink_dl_t * dl = iolink_get_dl_ctx (port);
    dl->mtx          = os_mutex_create();
