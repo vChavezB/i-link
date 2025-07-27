@@ -38,6 +38,7 @@
 #include "osal_log.h"
 
 #include <string.h> /* memset */
+#include <iolm/utils.h>
 
 /**
  * @file
@@ -2077,6 +2078,21 @@ static void sm_DL_Read_cnf_cb (iolink_job_t * job)
 #endif
 
       real_paramlist->cycletime = new_cycletime;
+      // Update cycletime of device according to
+      // parameter PortCycleTime element of PortConfigList (Table E.3)
+     
+      // Decode the MinCycleTime in micro seconds from Param. Page 1 of device
+      const uint32_t min_cycle_time_us = cyctime_decode_us(new_cycletime);
+      // Decode the user PortCycleTime from PortConfigList
+      const uint32_t user_cycle_time_us = cyctime_decode_us(sm->config_paramlist.cycletime);
+      // If user cycletime is not AFAP and its faster than the minimum allowed
+      if (sm->config_paramlist.cycletime != 0 &&  user_cycle_time_us >= min_cycle_time_us) {
+         real_paramlist->cycletime = sm->config_paramlist.cycletime;
+         new_cycletime = sm->config_paramlist.cycletime;
+      } else {
+         real_paramlist->cycletime = new_cycletime;
+      }
+      iolink_pl_set_cycletime (port, new_cycletime);
    }
       sm->dev_com.mincycle = value;
       break;

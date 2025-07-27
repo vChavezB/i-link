@@ -525,55 +525,55 @@ typedef struct CC_PACKED arg_block_joberror
 } arg_block_joberror_t;
 CC_PACKED_END
 
-static_assert (sizeof (iolink_portmode_t) == 1, "");
-static_assert (sizeof (iolink_validation_check_t) == 1, "");
-static_assert (sizeof (iolink_iq_behavior_t) == 1, "");
-static_assert (sizeof (iolink_arg_block_id_t) == 2, "");
-static_assert (sizeof (iolink_port_status_info_t) == 1, "");
-static_assert (sizeof (iolink_transmission_rate_t) == 1, "");
+CC_STATIC_ASSERT (sizeof (iolink_portmode_t) == 1);
+CC_STATIC_ASSERT (sizeof (iolink_validation_check_t) == 1);
+CC_STATIC_ASSERT (sizeof (iolink_iq_behavior_t) == 1);
+CC_STATIC_ASSERT (sizeof (iolink_arg_block_id_t) == 2);
+CC_STATIC_ASSERT (sizeof (iolink_port_status_info_t) == 1);
+CC_STATIC_ASSERT (sizeof (iolink_transmission_rate_t) == 1);
 
-static_assert (sizeof (diag_entry_t) == 3, "");
+CC_STATIC_ASSERT (sizeof (diag_entry_t) == 3);
 
-static_assert (sizeof (arg_block_masterident_head_t) == 12, "");
-static_assert (
+CC_STATIC_ASSERT (sizeof (arg_block_masterident_head_t) == 12);
+CC_STATIC_ASSERT (
    sizeof (arg_block_masterident_t) ==
       sizeof (arg_block_masterident_head_t) +
-         sizeof (iolink_port_types_t) * IOLINK_NUM_PORTS,
-   "");
+         sizeof (iolink_port_types_t) * IOLINK_NUM_PORTS
+   );
 
-static_assert (sizeof (arg_block_pdin_head_t) == 4, "");
-static_assert (
+CC_STATIC_ASSERT (sizeof (arg_block_pdin_head_t) == 4);
+CC_STATIC_ASSERT (
    sizeof (arg_block_pdin_t) ==
-      sizeof (arg_block_pdin_head_t) + IOLINK_PD_MAX_SIZE,
-   "");
+      sizeof (arg_block_pdin_head_t) + IOLINK_PD_MAX_SIZE
+   );
 
-static_assert (sizeof (arg_block_pdout_head_t) == 4, "");
-static_assert (
+CC_STATIC_ASSERT (sizeof (arg_block_pdout_head_t) == 4);
+CC_STATIC_ASSERT (
    sizeof (arg_block_pdout_t) ==
-      sizeof (arg_block_pdout_head_t) + IOLINK_PD_MAX_SIZE,
-   "");
+      sizeof (arg_block_pdout_head_t) + IOLINK_PD_MAX_SIZE
+   );
 
-static_assert (sizeof (arg_block_pdinout_head_t) == 4, "");
-static_assert (
+CC_STATIC_ASSERT (sizeof (arg_block_pdinout_head_t) == 4);
+CC_STATIC_ASSERT (
    sizeof (arg_block_pdinout_t) ==
-      sizeof (arg_block_pdinout_head_t) + 2 + 2 * IOLINK_PD_MAX_SIZE,
-   "");
+      sizeof (arg_block_pdinout_head_t) + 2 + 2 * IOLINK_PD_MAX_SIZE
+   );
 
-static_assert (sizeof (arg_block_od_t) == 5, "");
-static_assert (sizeof (arg_block_ds_data_t) == 2 + 12, "");
+CC_STATIC_ASSERT (sizeof (arg_block_od_t) == 5);
+CC_STATIC_ASSERT (sizeof (arg_block_ds_data_t) == 2 + 12);
 
-static_assert (sizeof (portconfiglist_t) == 12, "");
-static_assert (
-   sizeof (arg_block_portconfiglist_t) == 2 + sizeof (portconfiglist_t),
-   "");
+CC_STATIC_ASSERT (sizeof (portconfiglist_t) == 12);
+CC_STATIC_ASSERT (
+   sizeof (arg_block_portconfiglist_t) == 2 + sizeof (portconfiglist_t)
+   );
 
-static_assert (
-   sizeof (arg_block_portstatuslist_t) == sizeof (diag_entry_t *) + 15,
-   "");
-static_assert (sizeof (arg_block_devevent_t) == 3 + sizeof (diag_entry_t) * 6, "");
-static_assert (sizeof (arg_block_portevent_t) == 5, "");
-static_assert (sizeof (arg_block_void_t) == 2, "");
-static_assert (sizeof (arg_block_joberror_t) == 6, "");
+CC_STATIC_ASSERT (
+   sizeof (arg_block_portstatuslist_t) == sizeof (diag_entry_t *) + 15
+   );
+CC_STATIC_ASSERT (sizeof (arg_block_devevent_t) == 3 + sizeof (diag_entry_t) * 6);
+CC_STATIC_ASSERT (sizeof (arg_block_portevent_t) == 5);
+CC_STATIC_ASSERT (sizeof (arg_block_void_t) == 2);
+CC_STATIC_ASSERT (sizeof (arg_block_joberror_t) == 6);
 
 typedef struct iolink_hw_drv iolink_hw_drv_t;
 
