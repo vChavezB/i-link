@@ -279,7 +279,7 @@ void iolink_14819_dump_registers (iolink_hw_drv_t * iolink_hw)
       "RevID",
    };
 
-   os_log (LOG_LEVEL_DEBUG | IOLINK_PL_LOG,
+   LOG_DEBUG (IOLINK_PL_LOG,
       "Addr Register     Hex  7654 3210\n");
 
    for (i = 0; i < MAX14819_NUM_REGISTERS; i++)
@@ -290,7 +290,7 @@ void iolink_14819_dump_registers (iolink_hw_drv_t * iolink_hw)
       value = iolink_14819_read_register (iolink, i);
       os_mutex_unlock (iolink->exclusive);
 
-      os_log (LOG_LEVEL_DEBUG | IOLINK_PL_LOG,
+      LOG_DEBUG (IOLINK_PL_LOG,
          "0x%02X %-11s  0x%02X %c%c%c%c %c%c%c%c\n",
          i,
          name[i],
